@@ -20,15 +20,12 @@ type RankInfoDTO struct {
 	TotalRank   []TotalRank   `json:"total_rank"`
 	UserNum     int           `json:"user_num"`
 }
-type UserBadge struct {
-	Icon        string `json:"icon"`
-	DisplayName string `json:"display_name"`
-}
+
 type TotalRank struct {
 	ContestID     int         `json:"contest_id"`
 	Username      string      `json:"username"`
 	UsernameColor interface{} `json:"username_color"`
-	UserBadge     UserBadge   `json:"user_badge"`
+	UserBadge     interface{} `json:"user_badge"`
 	UserSlug      string      `json:"user_slug"`
 	CountryCode   string      `json:"country_code"`
 	CountryName   string      `json:"country_name"`
