@@ -56,32 +56,22 @@ func main() {
 	fmt.Scanf("%s %s", &contestName, &username)
 
 	url := fmt.Sprintf(baseURL, contestName, "1")
-	fmt.Println("url: ", url)
 
 	rankInfoDTO := getRankInfoDTOByURL(url)
-
-	lastThreadPeople := rankInfoDTO.UserNum % (25 * 100)
-	numberOfThread := rankInfoDTO.UserNum / (25 * 100)
-	if lastThreadPeople != 0 {
-		numberOfThread++
+	numberOfPage := rankInfoDTO.UserNum / 25
+	if rankInfoDTO.UserNum%25 != 0 {
+		numberOfPage++
 	}
-	fmt.Println("numberOfThread:", numberOfThread)
-	fmt.Println("lastThreadPeople:", lastThreadPeople)
-
-	// 25000 -> 10 threads
-	// thread1 need to handle these pages -> 1 + 0 * offset(100), 2 + 0 * offset(100) ... 100 + 0 * offset(100)
-	// thread2 need to handle these pages -> 1 + 1 * offset(100), 2 + 1 * offset(100) ... 100 + 1 * offset(100)
 
 	res := make(chan int)
-	for i := 1; i <= numberOfThread; i++ {
-		if i != numberOfThread {
-			go worker(username, (i-1)*100, 2500, res, i)
-		} else {
-			go worker(username, (i-1)*100, lastThreadPeople, res, i)
+	for i := 1; i <= numberOfPage; i++ {
+		go worker(i, res)
+		if i%5 == 0 {
+			time.Sleep(1000 * time.Millisecond)
 		}
 	}
 
-	for i := 0; i < numberOfThread; i++ {
+	for i := 0; i < numberOfPage; i++ {
 		x := <-res
 		fmt.Println("channel val:", x)
 		if x != -1 {
@@ -97,52 +87,42 @@ func main() {
 	fmt.Println("main thread end")
 }
 
-func worker(username string, offset int, numberOfPeople int, res chan int, t int) {
-	fmt.Println(fmt.Sprintf("thread t%d start", t))
-	numberOfPage := 100
-	if numberOfPeople != 2500 {
-		numberOfPage = numberOfPeople/25 + 1
+func worker(page int, res chan int) {
+	fmt.Println(fmt.Sprintf("thread %d start", page))
+
+	url := fmt.Sprintf(baseURL, contestName, strconv.Itoa(page))
+
+	rankInfoDTO := getRankInfoDTOByURL(url)
+	ranking := rankInfoDTO.TotalRank
+	// should not go to follow case, only for safe
+	if len(ranking) == 0 {
+		res <- -1
+		fmt.Println(fmt.Sprintf("thread %d end", page))
+		return
 	}
 
-	for page := 1; page <= numberOfPage; page++ {
-		pageIdx := page + offset
-		url := fmt.Sprintf(baseURL, contestName, strconv.Itoa(pageIdx))
-
-		rankInfoDTO := getRankInfoDTOByURL(url)
-
-		ranking := rankInfoDTO.TotalRank
-		// should not go to follow case, only for safe
-		if len(ranking) == 0 {
-			res <- -1
-			fmt.Println(fmt.Sprintf("thread t%d end", t))
+	fmt.Println(fmt.Sprintf("thread %d parse ranking", page))
+	for i := 1; i <= len(ranking); i++ {
+		if ranking[i-1].Username == username {
+			res <- ranking[i-1].Rank
+			fmt.Println(fmt.Sprintf("thread %d end", page))
 			return
 		}
-
-		fmt.Println(fmt.Sprintf("thread t%d parse ranking, pageIdx: %d", t, pageIdx))
-		for i := 1; i <= len(ranking); i++ {
-			if ranking[i-1].Username == username {
-				res <- ranking[i-1].Rank
-				fmt.Println(fmt.Sprintf("thread t%d end", t))
-				return
-			}
-		}
-
-		// avoid rate limit exceed -> cause another issue, the benefit of parallel thread diappear
-		mu.Lock()
-		requestCounter++
-		totalCounter++
-		if requestCounter > 300 {
-			time.Sleep(30 * time.Second)
-			fmt.Println("cur totalCounter:", totalCounter)
-			requestCounter -= 300
-		}
-		mu.Unlock()
-
-		time.Sleep(1000 * time.Millisecond)
 	}
 
+	// avoid rate limit exceed -> cause another issue, the benefit of parallel thread diappear
+	mu.Lock()
+	requestCounter++
+	totalCounter++
+	if requestCounter > 100 {
+		time.Sleep(30 * time.Second)
+		fmt.Println("cur totalCounter:", totalCounter)
+		requestCounter -= 150
+	}
+	mu.Unlock()
+
 	res <- -1
-	fmt.Println(fmt.Sprintf("thread t%d end", t))
+	fmt.Println(fmt.Sprintf("thread %d end", page))
 }
 
 // helper functions
@@ -151,6 +131,7 @@ func getRankInfoDTOByURL(url string) RankInfoDTO {
 	if err != nil {
 		log.Fatal(err)
 	} else if resp.Status != "200 OK" {
+		fmt.Println("cur requestCounter:", requestCounter)
 		fmt.Println("cur totalCounter:", totalCounter)
 		fmt.Println(fmt.Sprintf("error while getting response from leetcode: %s", resp.Status))
 		log.Fatal(err)
